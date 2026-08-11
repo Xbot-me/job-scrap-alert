@@ -2,6 +2,7 @@ import os
 import json
 import urllib.request
 import xml.etree.ElementTree as ET
+import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -141,28 +142,36 @@ def analyze_job(job):
     4. Provide a brief 1-sentence reason for the score.
     """
     
-    try:
-        interaction = client.interactions.create(
-            model='gemini-3.6-flash',
-            input=prompt,
-            response_format={
-                "type": "text",
-                "mime_type": "application/json",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "score": {"type": "integer", "description": "0-100 fit score"},
-                        "reason": {"type": "string", "description": "1 sentence reason"},
-                        "is_scam_or_spam": {"type": "boolean"}
-                    },
-                    "required": ["score", "reason", "is_scam_or_spam"]
+    for attempt in range(3):
+        try:
+            interaction = client.interactions.create(
+                model='gemini-3.6-flash',
+                input=prompt,
+                response_format={
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "score": {"type": "integer", "description": "0-100 fit score"},
+                            "reason": {"type": "string", "description": "1 sentence reason"},
+                            "is_scam_or_spam": {"type": "boolean"}
+                        },
+                        "required": ["score", "reason", "is_scam_or_spam"]
+                    }
                 }
-            }
-        )
-        return json.loads(interaction.output_text)
-    except Exception as e:
-        print(f"Error in Gemini analysis: {e}")
-        return None
+            )
+            return json.loads(interaction.output_text)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "429" in error_str or "too_many_requests" in error_str or "quota" in error_str:
+                print(f"Rate limit hit. Waiting 60 seconds before retrying... (Attempt {attempt + 1}/3)")
+                time.sleep(60)
+            else:
+                print(f"Error in Gemini analysis: {e}")
+                return None
+    print(f"Failed to analyze job {job.get('title')} after 3 attempts.")
+    return None
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -221,6 +230,7 @@ def main():
                 print(f"Skipped {job['title']} - Score: {score}")
                 
         seen_jobs.add(job['id'])
+        time.sleep(4.2)  # Wait 4.2s to stay under 15 RPM free tier limit
 
     # Save state
     with open(state_file, 'w') as f:
