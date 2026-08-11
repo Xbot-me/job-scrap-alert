@@ -142,23 +142,24 @@ def analyze_job(job):
     """
     
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "score": types.Schema(type=types.Type.INTEGER, description="0-100 fit score"),
-                        "reason": types.Schema(type=types.Type.STRING, description="1 sentence reason"),
-                        "is_scam_or_spam": types.Schema(type=types.Type.BOOLEAN)
+        interaction = client.interactions.create(
+            model='gemini-3.6-flash',
+            input=prompt,
+            response_format={
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": "integer", "description": "0-100 fit score"},
+                        "reason": {"type": "string", "description": "1 sentence reason"},
+                        "is_scam_or_spam": {"type": "boolean"}
                     },
-                    required=["score", "reason", "is_scam_or_spam"]
-                )
-            )
+                    "required": ["score", "reason", "is_scam_or_spam"]
+                }
+            }
         )
-        return json.loads(response.text)
+        return json.loads(interaction.output_text)
     except Exception as e:
         print(f"Error in Gemini analysis: {e}")
         return None
