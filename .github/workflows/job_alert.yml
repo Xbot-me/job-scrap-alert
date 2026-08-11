@@ -1,41 +1,51 @@
 name: Telegram AI Job Alert
-
 on:
   schedule:
     # Run every 6 hours
     - cron: '0 */6 * * *'
   workflow_dispatch: # Allow manual trigger
 
+# Prevents two runs from racing on seen_jobs.json / the git push if a manual
+# trigger overlaps with a scheduled run, or a run overruns into the next slot.
+concurrency:
+  group: telegram-ai-job-alert
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # caps runaway runs (stuck retries, hung API calls) instead of burning Actions minutes for hours
     permissions:
       contents: write # Needed to commit the seen_jobs.json state file
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 1 # only need the latest commit, not full history
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Run Job Alert Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python job_alert.py
-
       - name: Commit state
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add seen_jobs.json || true
-          git commit -m "chore: update seen jobs state" || true
+          if git diff --quiet -- seen_jobs.json; then
+            echo "No state changes, skipping commit."
+            exit 0
+          fi
+          git add seen_jobs.json
+          git commit -m "chore: update seen jobs state"
+          # Rebase onto the latest remote state before pushing, in case
+          # something else updated the branch since checkout. Retries once.
+          git pull --rebase origin "${GITHUB_REF_NAME}" || true
           git push
