@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A lead is a post where someone is asking for help that you can answer
+// directly: an email address, a Reddit DM, or (last resort) an apply link.
+// Rejected posts are never stored, so everything here is worth a look.
+
+enum LeadKind {
+  GIG // one-off / freelance work: fastest path to getting paid
+  JOB // ongoing employment or long contract
+}
+
+enum LeadStatus {
+  NEW
+  SAVED
+  CONTACTED
+  HIDDEN
+}
+
+enum RemoteScope {
+  WORLDWIDE // explicitly open to anywhere
+  ASIA_OK // explicitly mentions Asia / APAC / Bangladesh / GMT+6
+  TIMEZONE // remote, but wants overlap with US/EU hours
+  UNSTATED // remote, no restriction mentioned
+}
+
+model Lead {
+  id          String      @id @default(cuid())
+  source      String // e.g. "HN Who's Hiring", "r/forhire"
+  externalId  String
+  url         String // the original post
+  title       String
+  company     String?
+  body        String      @db.Text
+  emails      String[]
+  redditUser  String?
+  applyUrl    String?
+  pay         String?
+  kind        LeadKind
+  remote      RemoteScope
+  skills      String[]
+  score       Int
+  reasons     String[]
+  postedAt    DateTime
+  firstSeenAt DateTime    @default(now())
+  status      LeadStatus  @default(NEW)
+  contactedAt DateTime?
+
+  @@unique([source, externalId])
+  @@index([status, score])
+}
+
+model SyncRun {
+  id      String   @id @default(cuid())
+  at      DateTime @default(now())
+  fetched Int
+  kept    Int
+  added   Int
+  errors  String[]
+}
