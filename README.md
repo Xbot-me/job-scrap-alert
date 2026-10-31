@@ -1,55 +1,46 @@
-# Telegram AI Job Alert Bot
+# Leads
 
-This script automatically pulls remote job listings from popular sources (We Work Remotely, Remotive), analyzes them using Google's Gemini AI against your specific profile, and sends high-quality matches to your Telegram.
+Finds remote developer work you can apply to **directly**: a founder's email, a Reddit DM, a small team posting
+for itself. Big household-name companies, ATS black holes, and region-locked roles are filtered out, so the inbox
+stays short and every item is someone you can actually write to today.
 
-## Setup Instructions
+## Where leads come from
 
-### 1. Install Dependencies
+| Source | Why it's here |
+| --- | --- |
+| HN "Who is hiring?" (last 2 months) | Mostly small startups posting themselves, often with a founder's email |
+| HN "Freelancer? Seeking freelancer?" | People with a concrete project and no one to build it |
+| Reddit hiring subs (r/forhire, r/jobbit, r/hiring, r/remotejs, …) | Small business owners hiring directly; you can DM them |
+| Reddit small-business / dev subs (r/wordpress, r/shopify, r/smallbusiness, …) | "I need a developer for my site" posts |
+| Remotive, RemoteOK, Jobicy, We Work Remotely | **Only** when the post gives a real person's email |
+
+## How a lead is judged (`src/leads/score.ts`)
+
+Dropped outright: older than 60 days, well-known company, red flags from `search_config.md`, restricted to a
+country/region (e.g. "Remote (US)", "must be based in the EU"), not remote, not a hands-on dev role, or outside the
+stack you ticked in `search_config.md`.
+
+Everything else is scored 0–100, and each point comes with a reason you can read on the card: direct email beats a
+Reddit DM, and both beat an apply link. Being open to Asia or worldwide, matching your stack, a small team or founder,
+a concrete thing to fix, freelance (quick to start), and stated pay all add points. Wanting US/EU-hours overlap,
+signs of a big well-funded company, and age all take points away.
+
+## Using it
+
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-pip install -r requirements.txt
+npm install
+npm run db:migrate     # creates the Lead table in DATABASE_URL
+npm run leads:sync     # or press "Find new leads" in the app
+npm run dev            # http://localhost:3000
 ```
 
-### 2. Configure Environment Variables
-Copy the example environment file:
+Fill in the `OUTREACH_*` values in `.env` (see `.env.example`), especially `OUTREACH_CV_URL`, a public link to your CV.
+Every **Email** / **Gmail** / **Message u/…** button then opens a short, specific draft that names the post and the
+stack it matched. Attach your CV if you like, send it, then press **Sent**. Contacted leads show a follow-up nudge after 5 days.
+
+What you're looking for (roles, technologies, red flags) lives in `search_config.md`, which is shared with the Telegram bot
+(`job_alert.py`). Edit the checkboxes and the next sync re-judges everything still in your inbox.
+
 ```bash
-cp .env.example .env
-```
-
-Open `.env` and fill in the 3 required keys:
-
-**a. Gemini API Key**
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Click "Create API Key" and paste it into `GEMINI_API_KEY`.
-
-**b. Telegram Bot Token**
-1. Open Telegram and search for `@BotFather`.
-2. Send `/newbot` and follow the prompts to create a bot.
-3. BotFather will give you an HTTP API Token. Paste this into `TELEGRAM_BOT_TOKEN`.
-
-**c. Telegram Chat ID**
-1. Start a chat with your newly created bot in Telegram (click Start).
-2. Open your browser and go to `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
-3. Look for the `"chat":{"id":123456789,...}` block in the JSON response.
-4. Copy that ID number and paste it into `TELEGRAM_CHAT_ID`.
-
-### 3. Running via GitHub Actions (Recommended)
-
-This repository is already configured to run completely automatically in the cloud via GitHub Actions.
-
-1. Push this code to a private GitHub repository.
-2. In your GitHub repository, go to **Settings > Secrets and variables > Actions**.
-3. Click **New repository secret** and add all 3 of your keys exactly as they appear in the `.env` file:
-   - `GEMINI_API_KEY`
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_CHAT_ID`
-4. Also go to **Settings > Actions > General > Workflow permissions** and select **Read and write permissions** (this allows the bot to save the `seen_jobs.json` file back to the repo).
-5. Go to the **Actions** tab, select **Telegram AI Job Alert**, and click **Run workflow** to test it immediately.
-
-The bot will now automatically wake up and search for jobs every 6 hours, completely for free in the cloud!
-
-### 4. Running Locally (Alternative)
-```bash
-python job_alert.py
+npm test               # scoring, remote-restriction and email-extraction rules
 ```
