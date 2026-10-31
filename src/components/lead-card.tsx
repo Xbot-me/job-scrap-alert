@@ -3,16 +3,31 @@ import { Archive, Bookmark, ExternalLink, Mail, MessageSquare, Send, Undo2 } fro
 import { setStatus } from "@/app/actions";
 import { CopyButton } from "@/components/client-buttons";
 import { Button } from "@/components/ui/button";
+import { LANGUAGE_NAMES } from "@/leads/classify";
 import type { Profile } from "@/leads/config";
 import { contactLinks } from "@/leads/outreach";
 import { cn } from "@/lib/utils";
 
-const REMOTE_LABEL: Record<Lead["remote"], string> = {
-  WORLDWIDE: "Worldwide",
-  ASIA_OK: "Open to Asia",
-  TIMEZONE: "US/EU hours",
+const REMOTE_LABEL: Record<NonNullable<Lead["remote"]>, string> = {
+  WORLDWIDE: "Remote, worldwide",
+  ASIA_OK: "Remote, open to Asia",
+  TIMEZONE: "Remote, US/EU hours",
+  REGION: "Remote, residents only",
   UNSTATED: "Remote",
 };
+
+const EMPLOYMENT_LABEL: Record<Lead["employment"], string | null> = {
+  FREELANCE: "Freelance",
+  CONTRACT: "Contract",
+  PART_TIME: "Part-time",
+  FULL_TIME: "Full-time",
+  UNKNOWN: null,
+};
+
+function placeLabel(lead: Lead) {
+  const mode = lead.workMode === "REMOTE" ? REMOTE_LABEL[lead.remote ?? "UNSTATED"] : lead.workMode === "HYBRID" ? "Hybrid" : "On-site";
+  return lead.country ? `${mode} · ${lead.country}` : lead.workMode === "REMOTE" ? mode : `${mode} · see post`;
+}
 
 export function ago(date: Date, now = Date.now()) {
   const hours = Math.max(0, (now - date.getTime()) / 3_600_000);
@@ -67,8 +82,10 @@ export function LeadCard({ lead, profile }: { lead: Lead; profile: Profile }) {
           </p>
 
           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{lead.kind === "GIG" ? "Freelance" : "Job"}</span>
-            <span>{REMOTE_LABEL[lead.remote]}</span>
+            <span className="font-medium text-foreground">{placeLabel(lead)}</span>
+            {EMPLOYMENT_LABEL[lead.employment] && <span>{EMPLOYMENT_LABEL[lead.employment]}</span>}
+            {lead.visa && <span className="text-success">Visa / relocation</span>}
+            {lead.language !== "en" && <span>In {LANGUAGE_NAMES[lead.language] ?? lead.language}</span>}
             {lead.pay && <span className="text-foreground">{lead.pay}</span>}
             {lead.skills.length > 0 && <span>{lead.skills.slice(0, 5).join(", ")}</span>}
           </p>

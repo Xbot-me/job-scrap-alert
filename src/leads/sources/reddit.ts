@@ -58,7 +58,7 @@ function toLead(entry: Entry): RawLead {
     emails: extractEmails(entry.body),
     redditUser: entry.author && entry.author !== "[deleted]" ? entry.author : undefined,
     applyUrl: extractApplyUrl(entry.body),
-    kind: /\b(full[\s-]?time|salary|annual|per year|\/yr|benefits)\b/i.test(entry.body) ? "JOB" : "GIG",
+    gigByDefault: true,
     postedAt: entry.published,
   };
 }

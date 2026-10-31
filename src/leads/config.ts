@@ -8,6 +8,8 @@ export type Matcher = { name: string; re: RegExp };
 
 export type SearchConfig = {
   skills: Matcher[];
+  /** Tech your portfolio shows you've shipped; weighted above the checkboxes. */
+  portfolio?: Matcher[];
   roles: Matcher[];
   redFlags: Matcher[];
 };
@@ -17,6 +19,8 @@ export type Profile = {
   years: string;
   location: string;
   headline: string;
+  /** One sentence of proof, e.g. your biggest shipped result. */
+  proof?: string;
   cvUrl?: string;
   portfolioUrl?: string;
   githubUrl?: string;
@@ -101,6 +105,7 @@ export function loadProfile(env: Record<string, string | undefined> = process.en
     years: blank(env.OUTREACH_YEARS) ?? "6",
     location: blank(env.OUTREACH_LOCATION) ?? "Dhaka, Bangladesh",
     headline: blank(env.OUTREACH_HEADLINE) ?? "full-stack developer",
+    proof: blank(env.OUTREACH_PROOF),
     cvUrl: blank(env.OUTREACH_CV_URL),
     portfolioUrl: blank(env.OUTREACH_PORTFOLIO_URL),
     githubUrl: blank(env.OUTREACH_GITHUB_URL),

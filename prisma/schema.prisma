@@ -9,11 +9,21 @@ datasource db {
 
 // A lead is a post where someone is asking for help that you can answer
 // directly: an email address, a Reddit DM, or (last resort) an apply link.
+// Remote, hybrid and on-site work in any country are all fair game.
 // Rejected posts are never stored, so everything here is worth a look.
 
-enum LeadKind {
-  GIG // one-off / freelance work: fastest path to getting paid
-  JOB // ongoing employment or long contract
+enum Employment {
+  FREELANCE // one-off / project work: fastest path to getting paid
+  CONTRACT
+  PART_TIME
+  FULL_TIME
+  UNKNOWN
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ONSITE
 }
 
 enum LeadStatus {
@@ -27,6 +37,7 @@ enum RemoteScope {
   WORLDWIDE // explicitly open to anywhere
   ASIA_OK // explicitly mentions Asia / APAC / Bangladesh / GMT+6
   TIMEZONE // remote, but wants overlap with US/EU hours
+  REGION // remote, but only for people in a named country/region
   UNSTATED // remote, no restriction mentioned
 }
 
@@ -42,8 +53,12 @@ model Lead {
   redditUser  String?
   applyUrl    String?
   pay         String?
-  kind        LeadKind
-  remote      RemoteScope
+  employment  Employment  @default(UNKNOWN)
+  workMode    WorkMode    @default(REMOTE)
+  remote      RemoteScope? // only for REMOTE leads
+  country     String? // country or region the job is tied to; null = anywhere
+  language    String      @default("en")
+  visa        Boolean     @default(false) // visa sponsorship or relocation offered
   skills      String[]
   score       Int
   reasons     String[]
@@ -54,6 +69,7 @@ model Lead {
 
   @@unique([source, externalId])
   @@index([status, score])
+  @@index([country])
 }
 
 model SyncRun {

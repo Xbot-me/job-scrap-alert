@@ -29,6 +29,9 @@ describe("parseHiringHeader", () => {
   it("reads the pipe convention", () => {
     expect(parseHiringHeader("Acme | Full-stack Engineer | REMOTE | $120k\nbody")).toMatchObject({ company: "Acme", role: "Full-stack Engineer" });
   });
+  it("doesn't mistake a company name containing 'cto' for a role", () => {
+    expect(parseHiringHeader("CVector | Software Engineers | New York City | ONSITE")).toMatchObject({ company: "CVector", role: "Software Engineers" });
+  });
   it("reads labelled lines", () => {
     expect(parseHiringHeader("Location: Dubrovnik\nCompany: Beta Labs\nRole: Backend developer")).toMatchObject({ company: "Beta Labs", role: "Backend developer" });
   });

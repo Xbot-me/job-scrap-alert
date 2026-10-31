@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { refreshLeads } from "@/app/actions";
 import { RefreshButton, ThemeToggle } from "@/components/client-buttons";
+import { Filters } from "@/components/filters";
 import { ago, LeadCard } from "@/components/lead-card";
 import { loadProfile } from "@/leads/config";
 import { prisma } from "@/lib/db";
@@ -17,36 +18,61 @@ const VIEWS = {
 } as const;
 type View = keyof typeof VIEWS;
 
+const PAGE = 50;
+const ANYWHERE = "anywhere";
+
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const one = (k: string) => (Array.isArray(sp[k]) ? sp[k][0] : sp[k]);
+  const one = (k: string) => (Array.isArray(sp[k]) ? sp[k][0] : sp[k]) || undefined;
   const view: View = (one("view") as View) in VIEWS ? (one("view") as View) : "inbox";
-  const kind = one("kind") === "gig" ? "GIG" : one("kind") === "job" ? "JOB" : undefined;
-  const emailOnly = one("email") === "1";
-
-  const where: Prisma.LeadWhereInput = {
-    status: VIEWS[view].status,
-    ...(kind && { kind }),
-    ...(emailOnly && { emails: { isEmpty: false } }),
+  const params = {
+    view: view === "inbox" ? undefined : view,
+    country: one("country"),
+    mode: one("mode"),
+    type: one("type"),
+    email: one("email"),
+    visa: one("visa"),
   };
-  const [leads, counts, lastRun] = await Promise.all([
+  const limit = Math.min(500, Math.max(PAGE, Number(one("limit")) || PAGE));
+
+  const filters: Prisma.LeadWhereInput = {
+    ...(params.country === ANYWHERE ? { country: null } : params.country ? { country: params.country } : {}),
+    ...(params.mode === "remote" && { workMode: "REMOTE" }),
+    ...(params.mode === "onsite" && { workMode: { in: ["ONSITE", "HYBRID"] } }),
+    ...(params.type === "gig" && { employment: { in: ["FREELANCE", "CONTRACT", "PART_TIME"] } }),
+    ...(params.type === "fulltime" && { employment: "FULL_TIME" }),
+    ...(params.email === "1" && { emails: { isEmpty: false } }),
+    ...(params.visa === "1" && { visa: true }),
+  };
+  const where: Prisma.LeadWhereInput = { status: VIEWS[view].status, ...filters };
+
+  const [leads, total, counts, byCountry, lastRun] = await Promise.all([
     prisma.lead.findMany({
       where,
       orderBy: view === "contacted" ? [{ contactedAt: "asc" }] : [{ score: "desc" }, { postedAt: "desc" }],
-      take: 150,
+      take: limit,
     }),
+    prisma.lead.count({ where }),
     prisma.lead.groupBy({ by: ["status"], _count: true }),
+    prisma.lead.groupBy({ by: ["country"], where: { status: VIEWS[view].status }, _count: true }),
     prisma.syncRun.findFirst({ orderBy: { at: "desc" } }),
   ]);
   const count = (s: string) => counts.find((c) => c.status === s)?._count ?? 0;
   const profile = loadProfile();
 
+  const anywhere = byCountry.find((c) => c.country === null)?._count ?? 0;
+  const countries = [
+    ...(anywhere ? [{ value: ANYWHERE, label: `Remote, anywhere (${anywhere})` }] : []),
+    ...byCountry
+      .filter((c) => c.country)
+      .sort((a, b) => b._count - a._count || a.country!.localeCompare(b.country!))
+      .map((c) => ({ value: c.country!, label: `${c.country} (${c._count})` })),
+  ];
+
   const href = (patch: Record<string, string | undefined>) => {
-    const next = { view, kind: kind?.toLowerCase(), email: emailOnly ? "1" : undefined, ...patch };
-    const qs = new URLSearchParams(Object.entries(next).filter(([, v]) => v) as [string, string][]);
-    if (qs.get("view") === "inbox") qs.delete("view");
+    const qs = new URLSearchParams(Object.entries({ ...params, ...patch }).filter(([, v]) => v) as [string, string][]);
     return qs.size ? `/?${qs}` : "/";
   };
 
@@ -56,8 +82,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Leads</h1>
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-            Small teams and founders hiring remote developers who you can email or message directly. Big names and
-            ATS black holes are filtered out.
+            Dev work in any country, remote or on-site, from small teams you can reach directly, ranked by how well it
+            matches {profile.portfolioUrl ? "your portfolio" : "your stack"}. Big names and dead-end postings are filtered out.
           </p>
         </div>
         <ThemeToggle />
@@ -76,53 +102,52 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
       )}
       {!profile.cvUrl && (
         <p className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground">
-          Add <code className="font-mono text-xs">OUTREACH_CV_URL</code> (a public link to your CV) and{" "}
-          <code className="font-mono text-xs">OUTREACH_NAME</code> to <code className="font-mono text-xs">.env</code> so every
-          drafted message includes them.
+          Add <code className="font-mono text-xs">OUTREACH_CV_URL</code> (a public link to your CV) to{" "}
+          <code className="font-mono text-xs">.env</code> so every drafted message includes it.
         </p>
       )}
 
-      <nav className="mt-8 flex flex-wrap items-end justify-between gap-3 border-b border-border">
-        <div className="flex gap-5">
-          {(Object.keys(VIEWS) as View[]).map((v) => (
-            <Link
-              key={v}
-              href={href({ view: v })}
-              className={cn(
-                "-mb-px border-b-2 pb-2 text-sm",
-                v === view ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {VIEWS[v].label} <span className="tabular-nums text-muted-foreground">{count(VIEWS[v].status)}</span>
-            </Link>
-          ))}
-        </div>
-        <div className="flex gap-3 pb-2 text-sm">
-          {[
-            ["All", undefined],
-            ["Freelance", "gig"],
-            ["Jobs", "job"],
-          ].map(([label, k]) => (
-            <Link key={label} href={href({ kind: k })} className={cn(kind?.toLowerCase() === k ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}>
-              {label}
-            </Link>
-          ))}
-          <Link href={href({ email: emailOnly ? undefined : "1" })} className={cn(emailOnly ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}>
-            {emailOnly ? "✓ " : ""}Has email
+      <nav className="mt-8 flex gap-5 border-b border-border">
+        {(Object.keys(VIEWS) as View[]).map((v) => (
+          <Link
+            key={v}
+            href={href({ view: v === "inbox" ? undefined : v, limit: undefined })}
+            className={cn(
+              "-mb-px border-b-2 pb-2 text-sm",
+              v === view ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {VIEWS[v].label} <span className="tabular-nums text-muted-foreground">{count(VIEWS[v].status)}</span>
           </Link>
-        </div>
+        ))}
       </nav>
+      <Filters params={params} countries={countries} />
 
       {leads.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">
-          {view === "inbox" ? "Nothing here yet. Run a search to pull fresh leads." : `No ${VIEWS[view].label.toLowerCase()} leads.`}
+          {count(VIEWS[view].status) === 0 && view === "inbox"
+            ? "Nothing here yet. Run a search to pull fresh leads."
+            : "No leads match these filters."}
         </p>
       ) : (
-        <div>
-          {leads.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} profile={profile} />
-          ))}
-        </div>
+        <>
+          <p className="pb-1 text-xs text-muted-foreground">
+            {total} {total === 1 ? "lead" : "leads"}
+            {total > leads.length ? `, showing the best ${leads.length}` : ""}
+          </p>
+          <div>
+            {leads.map((lead) => (
+              <LeadCard key={lead.id} lead={lead} profile={profile} />
+            ))}
+          </div>
+          {total > leads.length && (
+            <div className="pt-6 text-center">
+              <Link href={href({ limit: String(limit + PAGE) })} scroll={false} className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                Show {Math.min(PAGE, total - leads.length)} more
+              </Link>
+            </div>
+          )}
+        </>
       )}
     </main>
   );

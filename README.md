@@ -1,29 +1,37 @@
 # Leads
 
-Finds remote developer work you can apply to **directly**: a founder's email, a Reddit DM, a small team posting
-for itself. Big household-name companies, ATS black holes, and region-locked roles are filtered out, so the inbox
-stays short and every item is someone you can actually write to today.
+Finds developer work in **any country, remote or on-site, freelance, contract or full-time**, from teams you can
+reach directly: a founder's email, a Reddit DM, a small team posting for itself. Leads are ranked by how well they
+match the tech on your portfolio. Household-name companies, citizens-only roles and weak apply-form-only postings
+are filtered out.
 
 ## Where leads come from
 
-| Source | Why it's here |
-| --- | --- |
-| HN "Who is hiring?" (last 2 months) | Mostly small startups posting themselves, often with a founder's email |
-| HN "Freelancer? Seeking freelancer?" | People with a concrete project and no one to build it |
-| Reddit hiring subs (r/forhire, r/jobbit, r/hiring, r/remotejs, …) | Small business owners hiring directly; you can DM them |
-| Reddit small-business / dev subs (r/wordpress, r/shopify, r/smallbusiness, …) | "I need a developer for my site" posts |
-| Remotive, RemoteOK, Jobicy, We Work Remotely | **Only** when the post gives a real person's email |
+| Source | Country / language | Why it's here |
+| --- | --- | --- |
+| HN "Who is hiring?" (last 2 months) | Global, English | Small startups posting themselves, often with a founder's email |
+| HN "Freelancer? Seeking freelancer?" | Global, English | People with a concrete project and no one to build it |
+| Reddit hiring + small-business subs | Global, English | Owners hiring directly; you can DM them |
+| Arbeitnow | Germany / EU, German + English | Remote, hybrid and on-site roles, often with relocation |
+| Habr Career | Russia / CIS, Russian | Searched for PHP, Python, Go, DevOps, WordPress, full-stack |
+| backend-br/vagas, frontendbr/vagas (GitHub) | Brazil, Portuguese | Community job boards, often with an email for your CV |
+| MyCareersFuture | Singapore | Government job board, salaries always listed |
+| Remotive, RemoteOK, Jobicy, We Work Remotely, Himalayas, Working Nomads | Global remote | Kept when there's a direct email or a strong match |
 
-## How a lead is judged (`src/leads/score.ts`)
+## How a lead is judged
 
-Dropped outright: older than 60 days, well-known company, red flags from `search_config.md`, restricted to a
-country/region (e.g. "Remote (US)", "must be based in the EU"), not remote, not a hands-on dev role, or outside the
-stack you ticked in `search_config.md`.
+`src/leads/classify.ts` reads each post in English, German, Spanish, Portuguese, French, Polish, Russian or Japanese
+to work out its **country**, **work mode** (remote / hybrid / on-site), **type** (freelance / contract / part-time /
+full-time), **visa or relocation support**, and **language**.
 
-Everything else is scored 0–100, and each point comes with a reason you can read on the card: direct email beats a
-Reddit DM, and both beat an apply link. Being open to Asia or worldwide, matching your stack, a small team or founder,
-a concrete thing to fix, freelance (quick to start), and stated pay all add points. Wanting US/EU-hours overlap,
-signs of a big well-funded company, and age all take points away.
+`src/leads/score.ts` then drops posts that can't work: older than 60 days, well-known company, citizens/residents only,
+on-site abroad with "no visa sponsorship", red flags from `search_config.md`, non-engineering roles, or outside your
+stack. Everything else is scored 0–100, and each point comes with a reason shown on the card:
+
+- **Contact:** direct email beats a Reddit DM, which beats an apply link.
+- **Where:** remote and open to Asia or worldwide scores best. On-site in Bangladesh, or abroad with visa/relocation, is good. On-site abroad without visa help, or remote only for residents of one country, scores low.
+- **Fit:** skills found on your portfolio (`OUTREACH_PORTFOLIO_URL`) count most; checked items in `search_config.md` add a little.
+- **Bonuses and penalties:** small team or founder, a concrete problem to fix, freelance/contract (can start fast) and stated pay all add points; signs of a big well-funded company and age take points away.
 
 ## Using it
 
@@ -34,7 +42,9 @@ npm run leads:sync     # or press "Find new leads" in the app
 npm run dev            # http://localhost:3000
 ```
 
-Fill in the `OUTREACH_*` values in `.env` (see `.env.example`), especially `OUTREACH_CV_URL`, a public link to your CV.
+Fill in the `OUTREACH_*` values in `.env` (see `.env.example`), especially `OUTREACH_CV_URL` (a public link to your
+CV) and `OUTREACH_PORTFOLIO_URL` (its tech stack drives the ranking). Filter the inbox by country, work mode, type,
+"has email" and "visa / relocation".
 Every **Email** / **Gmail** / **Message u/…** button then opens a short, specific draft that names the post and the
 stack it matched. Attach your CV if you like, send it, then press **Sent**. Contacted leads show a follow-up nudge after 5 days.
 

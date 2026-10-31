@@ -1,7 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
-import { loadSearchConfig } from "./config";
-import { evaluate, MAX_AGE_DAYS, type RawLead } from "./score";
-import { boardSources } from "./sources/boards";
+import { loadProfile, loadSearchConfig } from "./config";
+import { loadPortfolioSkills } from "./portfolio";
+import { evaluate, MAX_AGE_DAYS, type RawLead, type Verdict } from "./score";
+import { BOARD_SOURCE_NAMES, boardSources } from "./sources/boards";
+import { COUNTRY_SOURCE_NAMES, countrySources } from "./sources/countries";
 import { fetchHnFreelance, fetchHnHiring, isJobSeeker } from "./sources/hn";
 import { fetchReddit, isRequestTitle } from "./sources/reddit";
 
@@ -12,9 +14,17 @@ const SOURCES: Record<string, () => Promise<RawLead[]>> = {
   "HN freelance": fetchHnFreelance,
   Reddit: fetchReddit,
   ...boardSources,
+  ...countrySources,
 };
 
-const BOARD_NAMES = new Set(["Remotive", "RemoteOK", "Jobicy", "We Work Remotely"]);
+const BOARD_NAMES = new Set([...BOARD_SOURCE_NAMES, ...COUNTRY_SOURCE_NAMES]);
+
+function verdictFields(v: Extract<Verdict, { keep: true }>) {
+  return {
+    score: v.score, reasons: v.reasons, skills: v.skills, remote: v.remote, workMode: v.workMode,
+    employment: v.employment, country: v.country, language: v.language, visa: v.visa, pay: v.pay ?? null,
+  };
+}
 
 function dedupKey(lead: RawLead) {
   return `${lead.company ?? ""}|${lead.title}`.toLowerCase().replace(/[^a-z0-9|]/g, "");
@@ -22,7 +32,9 @@ function dedupKey(lead: RawLead) {
 
 /** Fetch every source, score, store what's worth contacting. Never touches your statuses. */
 export async function syncLeads(prisma: PrismaClient, log: (msg: string) => void = () => {}): Promise<SyncResult> {
-  const config = loadSearchConfig();
+  const portfolio = await loadPortfolioSkills(loadProfile().portfolioUrl);
+  const config = { ...loadSearchConfig(), portfolio };
+  log(portfolio.length ? `Portfolio skills: ${portfolio.map((p) => p.name).join(", ")}` : "No portfolio skills loaded (set OUTREACH_PORTFOLIO_URL)");
   const errors: string[] = [];
   const settled = await Promise.all(
     Object.entries(SOURCES).map(async ([name, fetchSource]) => {
@@ -61,8 +73,7 @@ export async function syncLeads(prisma: PrismaClient, log: (msg: string) => void
     const data = {
       url: lead.url, title: lead.title, company: lead.company ?? null, body: lead.body.slice(0, 20_000),
       emails: lead.emails, redditUser: lead.redditUser ?? null, applyUrl: lead.applyUrl ?? null,
-      pay: verdict.pay ?? null, kind: lead.kind, remote: verdict.remote, skills: verdict.skills,
-      score: verdict.score, reasons: verdict.reasons, postedAt: lead.postedAt,
+      postedAt: lead.postedAt, ...verdictFields(verdict),
     };
     const where = { source_externalId: { source: lead.source, externalId: lead.externalId } };
     const existing = await prisma.lead.findUnique({ where, select: { id: true } });
@@ -73,21 +84,26 @@ export async function syncLeads(prisma: PrismaClient, log: (msg: string) => void
     }
   }
 
-  // Re-check untouched inbox leads against today's rules, so tightening
-  // search_config.md or the scoring also cleans out what's already stored.
+  // Re-check inbox leads that weren't in this run's feeds (Reddit rolls over
+  // fast) against today's rules, so rule changes also clean out what's stored.
   for (const stored of await prisma.lead.findMany({ where: { status: "NEW" } })) {
-    const verdict = evaluate(
-      { ...stored, company: stored.company ?? undefined, redditUser: stored.redditUser ?? undefined, applyUrl: stored.applyUrl ?? undefined, fromBoard: BOARD_NAMES.has(stored.source) },
-      config,
-    );
     const id = `${stored.source}|${stored.externalId}`;
-    const droppedThisRun = fetchedIds.has(id) && !keptIds.has(id);
+    if (keptIds.has(id)) continue;
     const wrongPost =
-      droppedThisRun ||
+      fetchedIds.has(id) ||
       (stored.source.startsWith("r/") && !isRequestTitle(stored.source, stored.title)) ||
       (stored.source.startsWith("HN") && isJobSeeker(stored.body));
-    if (!verdict.keep || wrongPost) await prisma.lead.delete({ where: { id: stored.id } });
-    else if (verdict.score !== stored.score) await prisma.lead.update({ where: { id: stored.id }, data: { score: verdict.score, reasons: verdict.reasons } });
+    const verdict = wrongPost
+      ? null
+      : evaluate(
+          {
+            ...stored, company: stored.company ?? undefined, redditUser: stored.redditUser ?? undefined, applyUrl: stored.applyUrl ?? undefined,
+            country: stored.country ?? undefined, workMode: stored.workMode, employment: stored.employment, fromBoard: BOARD_NAMES.has(stored.source),
+          },
+          config,
+        );
+    if (!verdict?.keep) await prisma.lead.delete({ where: { id: stored.id } });
+    else await prisma.lead.update({ where: { id: stored.id }, data: verdictFields(verdict) });
   }
 
   // Stale leads you never acted on just add noise.

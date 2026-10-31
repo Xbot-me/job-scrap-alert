@@ -25,7 +25,7 @@ function firstLine(text: string) {
   return text.split("\n").find((l) => l.trim())?.trim() ?? "";
 }
 
-const ROLE_WORD = /engineer|developer|dev\b|programmer|full[\s-]?stack|back[\s-]?end|front[\s-]?end|devops|sre|cto|architect/i;
+const ROLE_WORD = /\b(engineer\w*|developer\w*|dev|programmer\w*|full[\s-]?stack|back[\s-]?end|front[\s-]?end|devops|sre|cto|architect\w*)\b/i;
 const NOT_A_NAME = /^(location|remote|onsite|on-site|hybrid|full[\s-]?time|part[\s-]?time|contract|visa|salary|https?:)|[$€£]\d|\b(remote|onsite)\b/i;
 
 export function isJobSeeker(body: string) {
@@ -62,7 +62,6 @@ export async function fetchHnHiring(): Promise<RawLead[]> {
         body,
         emails: extractEmails(`${c.text} ${body}`),
         applyUrl: extractApplyUrl(body),
-        kind: /\b(contract|freelance|part[\s-]?time)\b/i.test(header) ? "GIG" : "JOB",
         postedAt: new Date(c.created_at),
       });
     }
@@ -93,7 +92,7 @@ export async function fetchHnFreelance(): Promise<RawLead[]> {
         body,
         emails: extractEmails(`${c.text} ${body}`),
         applyUrl: extractApplyUrl(body),
-        kind: "GIG",
+        gigByDefault: true,
         postedAt: new Date(c.created_at),
       });
     }
